@@ -57,27 +57,6 @@ python api.py
 # Open http://localhost:8000
 ```
 
-## Deployment to Render
-
-### Option 1: One-Click Deploy
-1. Push this repo to GitHub
-2. Go to [render.com](https://render.com) → New → Web Service
-3. Connect your GitHub repo
-4. Render will auto-detect settings from `render.yaml`
-5. Deploy!
-
-### Option 2: Manual Setup
-1. **Build Command**: 
-   ```bash
-   pip install -e . && python -m src.reflex_docs_mcp.indexer
-   ```
-2. **Start Command**: 
-   ```bash
-   uvicorn api:app --host 0.0.0.0 --port $PORT
-   ```
-
-### Environment Variables
-- `PORT` - Set automatically by Render
 
 ## Project Structure
 
@@ -94,16 +73,6 @@ python api.py
 ├── Procfile                # Process definition
 └── test.py                 # Groq + MCP agentic demo
 ```
-
-## Using with Groq/LLMs
-
-See `test.py` for an example of using this MCP server with Groq's API in an agentic loop:
-
-```python
-# The model calls search_docs → gets results → provides answer
-python test.py
-```
-
 ## MCP Tools (for stdio mode)
 
 | Tool | Description |
@@ -113,6 +82,3 @@ python test.py
 | `list_components(category?)` | List all documented Reflex components |
 | `get_component(name)` | Get info for a specific component |
 
-## License
-
-MIT
