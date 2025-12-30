@@ -1,14 +1,27 @@
 # Reflex Docs MCP Server
 
-An MCP server that provides structured, read-only access to Reflex documentation for LLMs.
+**Give your LLMs a "Photographic Memory" of the Reflex Documentation.**
+
+This Project is an **Model Context Protocol (MCP) Server** designed to ground AI agents in the actual, latest documentation of the [Reflex](https://reflex.dev/) web framework. 
+
+### Why this exists?
+LLMs often hallucinate parameters or use outdated syntax when writing Reflex code. This server solves that by exposing the valid, up-to-date documentation as **tools** that the LLM can call on-demand.
+
+Instead of guessing, the AI works like a developer:
+1.  **Searches** the docs for a component (e.g., `search_docs("rx.foreach")`).
+2.  **Reads** the specific page (`get_doc("library/dynamic-rendering/foreach")`).
+3.  **Inspects** component schemas (`get_component("rx.button")`).
+4.  **Writes** accurate, working code based on the ground truth.
+
+---
 
 ## Features
 
-- **Full-text search** over Reflex docs using SQLite FTS5
-- **Section-level retrieval** with preserved markdown formatting
-- **Component index** with categories and descriptions
-- **Fast** - typical queries complete in <2ms
-- **Deployable** - FastAPI server ready for Render/Railway
+- **Full-text search** over Reflex docs using SQLite FTS5 (blazing fast <2ms response)
+- **Section-level retrieval** to give LLMs just the context they need (saving tokens)
+- **Component index** allowing lookups of properties and categories for every `rx.*` component
+- **Deployable API** via FastAPI, ready for Render/Railway/Vercel
+- **Zero-Hallucination Workflow** when integrated into an agentic loop
 
 ## API Endpoints
 
