@@ -4,6 +4,23 @@ version = "0.1.0"
 description = "MCP server providing structured access to Reflex documentation"
 readme = "README.md"
 requires-python = ">=3.13"
+license = { file = "LICENSE" }
+keywords = ["mcp", "fastmcp", "reflex", "docs", "search"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Documentation",
+    "Topic :: Software Development :: Libraries",
+]
+urls = {
+    "Homepage" = "https://github.com/itsmeadarsh2008/reflex-docs-mcp",
+    "Repository" = "https://github.com/itsmeadarsh2008/reflex-docs-mcp",
+    "Issues" = "https://github.com/itsmeadarsh2008/reflex-docs-mcp/issues",
+}
 dependencies = [
     "fastmcp>=2.14.1",
     "pyyaml>=6.0",
@@ -27,3 +44,23 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/reflex_docs_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/reflex_docs_mcp/**",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+    "env.example",
+]
+exclude = [
+    ".env",
+    ".venv/**",
+    ".vscode/**",
+    ".github/**",
+    ".ruff_cache/**",
+    "__pycache__/**",
+    "data/**",
+    "docs_src/**",
+    "uv.lock",
+]

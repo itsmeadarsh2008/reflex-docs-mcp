@@ -17,7 +17,7 @@ Ground AI agents in real, up-to-date Reflex docs via a fast, local MCP server.
 python3.14 -m venv .venv
 . .venv/bin/activate
 
-# Install
+# Install (local checkout)
 pip install -e .
 
 # Index docs (clones Reflex docs and builds search index)
@@ -28,6 +28,12 @@ python -m reflex_docs_mcp.server
 
 # Run MCP server over SSE
 python -m reflex_docs_mcp.server --transport sse --host 127.0.0.1 --port 8000
+```
+
+## Install From PyPI
+
+```bash
+pip install reflex-docs-mcp
 ```
 
 ## MCP Tools
@@ -42,6 +48,43 @@ python -m reflex_docs_mcp.server --transport sse --host 127.0.0.1 --port 8000
 ## Local MCP Config (VS Code)
 The repository includes a ready-to-use config at `.vscode/mcp.json` that runs the server with the local venv.
 
+## Global Install MCP Config (VS Code)
+If you install the package globally with `pip`, use one of these in `.vscode/mcp.json`:
+
+Using module invocation:
+```json
+{
+  "servers": {
+    "reflex-docs": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["-m", "reflex_docs_mcp.server"],
+      "env": {
+        "REFLEX_DOCS_AUTO_INDEX": "true"
+      }
+    }
+  },
+  "inputs": []
+}
+```
+
+Using the CLI entry point:
+```json
+{
+  "servers": {
+    "reflex-docs": {
+      "type": "stdio",
+      "command": "reflex-docs-mcp",
+      "args": [],
+      "env": {
+        "REFLEX_DOCS_AUTO_INDEX": "true"
+      }
+    }
+  },
+  "inputs": []
+}
+```
+
 ## Project Layout
 ```
 ├── main.py                 # MCP stdio entry point
@@ -53,14 +96,14 @@ The repository includes a ready-to-use config at `.vscode/mcp.json` that runs th
 │   └── server.py           # MCP server (stdio + SSE)
 ├── render.yaml             # Render deployment config
 ├── Procfile                # Process definition
-└── test.py                 # OpenRouter + MCP demo client
+└── test.py                 # Groq + MCP demo client
 ```
 
 ## Demo (Optional)
 The demo client uses Groq (OpenAI-compatible API) and the MCP Python client.
 
 ```bash
-pip install -e ".[demo]"
+pip install reflex-docs-mcp[demo]
 cp env.example .env
 # Add GROQ_API_KEY to .env
 python test.py
@@ -74,3 +117,6 @@ python test.py
 - `REFLEX_DOCS_DOCS_SRC` (path to clone docs into, default: `docs_src`)
 - `REFLEX_DOCS_SKIP_CLONE` / `REFLEX_DOCS_FORCE_CLONE`
 - `REFLEX_DOCS_KEEP_EXISTING`
+
+## License
+MIT
