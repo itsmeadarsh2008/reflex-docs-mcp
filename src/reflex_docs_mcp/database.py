@@ -1,11 +1,13 @@
 """SQLite database operations with FTS5 for full-text search."""
 
+import atexit
 import sqlite3
+import threading
 from pathlib import Path
-from contextlib import contextmanager
-from typing import Generator
+from contextlib import contextmanager, nullcontext
+from typing import Generator, Iterable
 
-from .models import DocResult, DocSection, DocPage, ComponentInfo
+from .models import DocResult, DocSection, DocPage, DocPageInfo, ComponentInfo
 
 # Default database path
 DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "reflex_docs.db"
@@ -21,15 +23,59 @@ def get_db_path() -> Path:
     return db_path
 
 
+_thread_local = threading.local()
+
+
+def _apply_pragmas(conn: sqlite3.Connection) -> None:
+    """Apply performance-related pragmas to the connection."""
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA temp_store=MEMORY")
+    # Negative cache_size means KB. -64000 ~= 64MB page cache.
+    conn.execute("PRAGMA cache_size=-64000")
+    conn.execute("PRAGMA foreign_keys=ON")
+
+
+def _get_thread_connection() -> sqlite3.Connection:
+    """Get or create a per-thread SQLite connection."""
+    conn = getattr(_thread_local, "conn", None)
+    if conn is None:
+        conn = sqlite3.connect(get_db_path(), timeout=30, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        _apply_pragmas(conn)
+        _thread_local.conn = conn
+    return conn
+
+
+def close_connection() -> None:
+    """Close the current thread's connection, if any."""
+    conn = getattr(_thread_local, "conn", None)
+    if conn is not None:
+        conn.close()
+        _thread_local.conn = None
+
+
+atexit.register(close_connection)
+
+
 @contextmanager
 def get_connection() -> Generator[sqlite3.Connection, None, None]:
-    """Get a database connection with row factory."""
-    conn = sqlite3.connect(get_db_path())
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-    finally:
-        conn.close()
+    """Get a cached database connection with row factory."""
+    conn = _get_thread_connection()
+    yield conn
+
+
+@contextmanager
+def transaction() -> Generator[sqlite3.Connection, None, None]:
+    """Run operations inside a single transaction."""
+    with get_connection() as conn:
+        try:
+            conn.execute("BEGIN")
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def init_db() -> None:
@@ -125,16 +171,7 @@ def insert_section(
     url: str
 ) -> None:
     """Insert a documentation section."""
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO docs_sections (slug, title, heading, level, content, position, url)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (slug, title, heading, level, content, position, url)
-        )
-        conn.commit()
+    insert_sections_many([(slug, title, heading, level, content, position, url)])
 
 
 def insert_component(
@@ -145,16 +182,55 @@ def insert_component(
     url: str | None
 ) -> None:
     """Insert a component, updating if it already exists."""
-    with get_connection() as conn:
+    insert_components_many([(name, category, description, doc_slug, url)])
+
+
+def insert_sections_many(
+    rows: Iterable[tuple[str, str, str, int, str, int, str]],
+    conn: sqlite3.Connection | None = None
+) -> int:
+    """Bulk insert documentation sections."""
+    rows = list(rows)
+    if not rows:
+        return 0
+    owns_connection = conn is None
+    context = get_connection() if owns_connection else nullcontext(conn)
+    with context as conn:
         cursor = conn.cursor()
-        cursor.execute(
+        cursor.executemany(
+            """
+            INSERT INTO docs_sections (slug, title, heading, level, content, position, url)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows
+        )
+        if owns_connection:
+            conn.commit()
+    return len(rows)
+
+
+def insert_components_many(
+    rows: Iterable[tuple[str, str | None, str, str | None, str | None]],
+    conn: sqlite3.Connection | None = None
+) -> int:
+    """Bulk insert components."""
+    rows = list(rows)
+    if not rows:
+        return 0
+    owns_connection = conn is None
+    context = get_connection() if owns_connection else nullcontext(conn)
+    with context as conn:
+        cursor = conn.cursor()
+        cursor.executemany(
             """
             INSERT OR REPLACE INTO components (name, category, description, doc_slug, url)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (name, category, description, doc_slug, url)
+            rows
         )
-        conn.commit()
+        if owns_connection:
+            conn.commit()
+    return len(rows)
 
 
 def search_sections(query: str, limit: int = 10) -> list[DocResult]:
@@ -268,6 +344,35 @@ def list_all_components(category: str | None = None) -> list[ComponentInfo]:
         ]
 
 
+def search_components(query: str, limit: int = 20) -> list[ComponentInfo]:
+    """Search components by name or description."""
+    query = query.strip()
+    if not query:
+        return []
+    like_query = f"%{query}%"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT * FROM components
+            WHERE name LIKE ? OR description LIKE ?
+            ORDER BY name
+            LIMIT ?
+            """,
+            (like_query, like_query, limit)
+        )
+        return [
+            ComponentInfo(
+                name=row["name"],
+                category=row["category"],
+                description=row["description"],
+                doc_slug=row["doc_slug"],
+                url=row["url"]
+            )
+            for row in cursor.fetchall()
+        ]
+
+
 def get_component_by_name(name: str) -> ComponentInfo | None:
     """Get a component by its name."""
     # Normalize name - accept with or without rx. prefix
@@ -320,3 +425,41 @@ def get_stats() -> dict:
             "pages": pages_count,
             "components": components_count
         }
+
+
+def list_pages(prefix: str | None = None, limit: int = 200) -> list[DocPageInfo]:
+    """List available documentation pages, optionally filtered by slug prefix."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        if prefix:
+            like_prefix = f"{prefix}%"
+            cursor.execute(
+                """
+                SELECT slug, MAX(title) AS title, MAX(url) AS url
+                FROM docs_sections
+                WHERE slug LIKE ?
+                GROUP BY slug
+                ORDER BY slug
+                LIMIT ?
+                """,
+                (like_prefix, limit)
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT slug, MAX(title) AS title, MAX(url) AS url
+                FROM docs_sections
+                GROUP BY slug
+                ORDER BY slug
+                LIMIT ?
+                """,
+                (limit,)
+            )
+        return [
+            DocPageInfo(
+                slug=row["slug"],
+                title=row["title"],
+                url=row["url"]
+            )
+            for row in cursor.fetchall()
+        ]

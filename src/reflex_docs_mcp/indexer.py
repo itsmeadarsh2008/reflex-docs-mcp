@@ -103,54 +103,74 @@ def index_docs(docs_dir: Path, clear_existing: bool = True) -> dict:
     md_files = list(docs_dir.rglob("*.md"))
     logger.info(f"Found {len(md_files)} markdown files")
     
-    for file_path in md_files:
-        try:
-            # Skip __init__.py and non-doc files
-            if file_path.name.startswith("_"):
-                continue
-            
-            # Parse the file
-            parsed = parse_doc_file(file_path, docs_dir)
-            
-            # Index all sections
-            for section in parsed.sections:
-                database.insert_section(
-                    slug=parsed.slug,
-                    title=parsed.title,
-                    heading=section.heading,
-                    level=section.level,
-                    content=section.content,
-                    position=section.position,
-                    url=parsed.url
-                )
-                stats["sections_indexed"] += 1
-            
-            # Index components from frontmatter
-            for component_name in parsed.components:
-                # Ensure rx. prefix
-                if not component_name.startswith("rx."):
-                    component_name = f"rx.{component_name}"
-                
-                category = get_category_from_slug(parsed.slug)
-                description = extract_component_description(parsed)
-                
-                database.insert_component(
-                    name=component_name,
-                    category=category,
-                    description=description,
-                    doc_slug=parsed.slug,
-                    url=parsed.url
-                )
-                stats["components_indexed"] += 1
-            
-            stats["files_processed"] += 1
-            
-            if stats["files_processed"] % 50 == 0:
-                logger.info(f"Processed {stats['files_processed']} files...")
-                
-        except Exception as e:
-            logger.error(f"Error processing {file_path}: {e}")
-            stats["errors"] += 1
+    sections_batch: list[tuple[str, str, str, int, str, int, str]] = []
+    components_batch: list[tuple[str, str | None, str, str | None, str | None]] = []
+    batch_size = 1000
+
+    with database.transaction() as conn:
+        for file_path in md_files:
+            try:
+                # Skip __init__.py and non-doc files
+                if file_path.name.startswith("_"):
+                    continue
+
+                # Parse the file
+                parsed = parse_doc_file(file_path, docs_dir)
+
+                # Collect sections
+                for section in parsed.sections:
+                    sections_batch.append((
+                        parsed.slug,
+                        parsed.title,
+                        section.heading,
+                        section.level,
+                        section.content,
+                        section.position,
+                        parsed.url
+                    ))
+
+                # Collect components from frontmatter
+                for component_name in parsed.components:
+                    # Ensure rx. prefix
+                    if not component_name.startswith("rx."):
+                        component_name = f"rx.{component_name}"
+
+                    category = get_category_from_slug(parsed.slug)
+                    description = extract_component_description(parsed)
+
+                    components_batch.append((
+                        component_name,
+                        category,
+                        description,
+                        parsed.slug,
+                        parsed.url
+                    ))
+
+                # Flush batches
+                if len(sections_batch) >= batch_size:
+                    stats["sections_indexed"] += database.insert_sections_many(sections_batch, conn=conn)
+                    sections_batch.clear()
+
+                if len(components_batch) >= batch_size:
+                    stats["components_indexed"] += database.insert_components_many(components_batch, conn=conn)
+                    components_batch.clear()
+
+                stats["files_processed"] += 1
+
+                if stats["files_processed"] % 50 == 0:
+                    logger.info(f"Processed {stats['files_processed']} files...")
+
+            except Exception as e:
+                logger.error(f"Error processing {file_path}: {e}")
+                stats["errors"] += 1
+
+        # Final flush
+        if sections_batch:
+            stats["sections_indexed"] += database.insert_sections_many(sections_batch, conn=conn)
+            sections_batch.clear()
+        if components_batch:
+            stats["components_indexed"] += database.insert_components_many(components_batch, conn=conn)
+            components_batch.clear()
     
     logger.info(f"Indexing complete: {stats}")
     return stats

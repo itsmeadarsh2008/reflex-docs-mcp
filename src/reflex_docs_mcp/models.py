@@ -30,6 +30,14 @@ class DocPage(BaseModel):
     sections: list[DocSection] = Field(description="Ordered list of sections")
 
 
+class DocPageInfo(BaseModel):
+    """Lightweight document page metadata."""
+
+    slug: str = Field(description="Document slug")
+    title: str = Field(description="Document title")
+    url: str = Field(description="Canonical docs URL")
+
+
 class ComponentInfo(BaseModel):
     """Information about a Reflex component."""
     

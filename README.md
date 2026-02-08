@@ -1,86 +1,71 @@
 # Reflex Docs MCP Server
 
-**Give your LLMs a "Photographic Memory" of the Reflex Documentation.**
+Ground AI agents in real, up-to-date Reflex docs via a fast, local MCP server.
 
-This Project is an **Model Context Protocol (MCP) Server** designed to ground AI agents in the actual, latest documentation of the [Reflex](https://reflex.dev/) web framework. 
+**Python:** 3.14 recommended. Compatible with 3.13+.
 
-**🚀 Live Demo Deployed at:** [https://reflex-docs-mcp.onrender.com](https://reflex-docs-mcp.onrender.com) 
+## What It Does
+- Full‑text search over Reflex docs (SQLite FTS5)
+- Section‑level retrieval for precise context
+- Component index for `rx.*` lookups
+- FastMCP server with stdio and SSE transports
 
-### What is Reflex?
-Reflex is a pure-Python web framework for building full-stack web applications without writing JavaScript.
-It lets developers define UI, state, and backend logic entirely in Python, which Reflex compiles into a modern, reactive web app.
-
-
-### Why this exists?
-LLMs often hallucinate parameters or use outdated syntax when writing Reflex code. This server solves that by exposing the valid, up-to-date documentation as **tools** that the LLM can call on-demand.
-
-Instead of guessing, the AI works like a developer:
-1.  **Searches** the docs for a component (e.g., `search_docs("rx.foreach")`).
-2.  **Reads** the specific page (`get_doc("library/dynamic-rendering/foreach")`).
-3.  **Inspects** component schemas (`get_component("rx.button")`).
-4.  **Writes** accurate, working code based on the ground truth.
-
----
-
-## Features
-
-- **Full-text search** over Reflex docs using SQLite FTS5 (blazing fast <2ms response)
-- **Section-level retrieval** to give LLMs just the context they need (saving tokens)
-- **Component index** allowing lookups of properties and categories for every `rx.*` component
-- **Deployable API** via FastAPI, ready for Render/Railway/Vercel
-- **Zero-Hallucination Workflow** when integrated into an agentic loop
-
-## API Endpoints
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /` | Health check |
-| `GET /search?query=...&limit=10` | Search docs |
-| `GET /doc/{slug}` | Get full page |
-| `GET /components?category=...` | List components |
-| `GET /component/{name}` | Get component info |
-| `GET /stats` | Database statistics |
-
-## Local Development
+## Quickstart
 
 ```bash
-# Clone and install
-git clone https://github.com/yourusername/reflex-docs-mcp.git
-cd reflex-docs-mcp
-python -m venv .venv
-.venv\Scripts\activate  # Windows
+# Create venv
+python3.14 -m venv .venv
+. .venv/bin/activate
+
+# Install
 pip install -e .
 
-# Index the docs (downloads Reflex docs and builds search index)
-python -m src.reflex_docs_mcp.indexer
+# Index docs (clones Reflex docs and builds search index)
+python -m reflex_docs_mcp.indexer
 
-# Run the API server
-python api.py
-# Open http://localhost:8000
+# Run MCP server (stdio)
+python -m reflex_docs_mcp.server
+
+# Run MCP server over SSE
+python -m reflex_docs_mcp.server --transport sse --host 127.0.0.1 --port 8000
 ```
 
+## MCP Tools
+- `search_docs(query)`
+- `get_doc(slug)`
+- `list_pages(prefix?, limit?)`
+- `list_components(category?)`
+- `search_components(query, limit?)`
+- `get_component(name)`
+- `get_stats()`
 
-## Project Structure
+## Local MCP Config (VS Code)
+The repository includes a ready-to-use config at `.vscode/mcp.json` that runs the server with the local venv.
 
+## Project Layout
 ```
-├── api.py                  # FastAPI server (deploy this)
 ├── main.py                 # MCP stdio entry point
 ├── src/reflex_docs_mcp/
 │   ├── models.py           # Pydantic data models
 │   ├── database.py         # SQLite + FTS5 operations
 │   ├── parser.py           # Markdown parser
 │   ├── indexer.py          # Docs cloning & indexing
-│   └── server.py           # MCP server (stdio)
+│   └── server.py           # MCP server (stdio + SSE)
 ├── render.yaml             # Render deployment config
 ├── Procfile                # Process definition
-└── test.py                 # Groq + MCP agentic demo
+└── test.py                 # OpenRouter + MCP demo client
 ```
-## MCP Tools (for stdio mode)
 
-| Tool | Description |
-|------|-------------|
-| `search_docs(query)` | Full-text search over Reflex docs |
-| `get_doc(slug)` | Retrieve a full doc page by slug |
-| `list_components(category?)` | List all documented Reflex components |
-| `get_component(name)` | Get info for a specific component |
+## Demo (Optional)
+The demo client uses Groq (OpenAI-compatible API) and the MCP Python client.
 
+```bash
+pip install -e ".[demo]"
+cp env.example .env
+# Add GROQ_API_KEY to .env
+python test.py
+```
+
+## Notes
+- `env.example` contains Groq settings.
+- The indexer writes to `data/reflex_docs.db` by default.

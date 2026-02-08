@@ -2,7 +2,16 @@ import asyncio
 import os
 import sys
 import json
-from dotenv import load_dotenv
+
+try:
+    from dotenv import load_dotenv
+    from openai import AsyncOpenAI
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+except ImportError as exc:
+    print("Optional demo dependencies are missing.")
+    print("Install with: pip install -e \".[demo]\"")
+    raise SystemExit(1) from exc
 
 # Load environment variables (GROQ_API_KEY)
 load_dotenv()
@@ -12,17 +21,14 @@ if not os.getenv("GROQ_API_KEY"):
     print("Error: GROQ_API_KEY not found in .env file")
     sys.exit(1)
 
-from groq import AsyncGroq
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-
-MODEL = "qwen/qwen3-32b"
+GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 MAX_ITERATIONS = 5  # Prevent infinite loops
 
 async def main():
     server_params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "src.reflex_docs_mcp.server"],
+        args=["-m", "reflex_docs_mcp.server"],
         env=None
     )
 
@@ -35,10 +41,10 @@ async def main():
             tools = await session.list_tools()
             print(f"✅ Connected! Found {len(tools.tools)} tools: {[t.name for t in tools.tools]}")
 
-            # Convert MCP Tools to Groq/OpenAI Format
-            groq_tools = []
+            # Convert MCP Tools to OpenAI-compatible format
+            tool_defs = []
             for tool in tools.tools:
-                groq_tools.append({
+                tool_defs.append({
                     "type": "function",
                     "function": {
                         "name": tool.name,
@@ -47,7 +53,10 @@ async def main():
                     }
                 })
 
-            client = AsyncGroq()
+            client = AsyncOpenAI(
+                api_key=os.environ["GROQ_API_KEY"],
+                base_url=GROQ_BASE_URL
+            )
             
             query = "How does rx.foreach work? Explain with an example."
             print(f"\n❓ User Query: {query}")
@@ -66,7 +75,7 @@ async def main():
                 response = await client.chat.completions.create(
                     model=MODEL,
                     messages=messages,
-                    tools=groq_tools,
+                    tools=tool_defs,
                     tool_choice="auto"
                 )
 
@@ -83,7 +92,7 @@ async def main():
                     break
                 
                 # Process tool calls
-                print(f"\n� Iteration {iteration + 1}: Model requested {len(tool_calls)} tool(s)")
+                print(f"\n Iteration {iteration + 1}: Model requested {len(tool_calls)} tool(s)")
                 messages.append(response_message)
 
                 for tool_call in tool_calls:

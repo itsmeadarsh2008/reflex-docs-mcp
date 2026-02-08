@@ -1,12 +1,10 @@
 """FastMCP server exposing Reflex documentation tools."""
 
 import logging
-from pathlib import Path
 
 from fastmcp import FastMCP
 
 from . import database
-from .models import DocResult, DocPage, ComponentInfo
 
 # Configure logging
 logging.basicConfig(
@@ -14,6 +12,10 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# Reasonable hard limits to protect the server from huge responses.
+_MAX_SEARCH_RESULTS = 50
+_MAX_PAGES_RESULTS = 500
 
 # Create the MCP server
 mcp = FastMCP(
@@ -26,8 +28,11 @@ mcp = FastMCP(
     Available tools:
     - search_docs: Search the documentation using keywords
     - get_doc: Get a full documentation page by its slug
+    - list_pages: List documentation pages by slug prefix
     - list_components: List all Reflex components
+    - search_components: Search components by name or description
     - get_component: Get details about a specific component
+    - get_stats: Get database statistics
     """
 )
 
@@ -47,7 +52,8 @@ def search_docs(query: str, limit: int = 10) -> list[dict]:
         search_docs("rx.foreach")
         search_docs("how to style components")
     """
-    logger.info(f"Searching docs: {query}")
+    limit = max(1, min(limit, _MAX_SEARCH_RESULTS))
+    logger.info(f"Searching docs: {query} (limit={limit})")
     
     try:
         results = database.search_sections(query, limit=limit)
@@ -109,6 +115,28 @@ def list_components(category: str | None = None) -> list[dict]:
 
 
 @mcp.tool
+def search_components(query: str, limit: int = 20) -> list[dict]:
+    """Search components by name or description.
+
+    Args:
+        query: Search query (e.g., "button", "layout", "table")
+        limit: Maximum number of results to return (default: 20)
+
+    Returns:
+        List of matching components with name, category, description, and documentation URL
+    """
+    limit = max(1, min(limit, _MAX_SEARCH_RESULTS))
+    logger.info(f"Searching components: {query} (limit={limit})")
+
+    try:
+        results = database.search_components(query, limit=limit)
+        return [comp.model_dump() for comp in results]
+    except Exception as e:
+        logger.error(f"Search components error: {e}")
+        return []
+
+
+@mcp.tool
 def get_component(name: str) -> dict | None:
     """Get detailed information about a specific Reflex component.
     
@@ -133,6 +161,28 @@ def get_component(name: str) -> dict | None:
     except Exception as e:
         logger.error(f"Get component error: {e}")
         return None
+
+
+@mcp.tool
+def list_pages(prefix: str | None = None, limit: int = 200) -> list[dict]:
+    """List documentation pages, optionally filtered by slug prefix.
+
+    Args:
+        prefix: Optional slug prefix (e.g., "library/", "state/")
+        limit: Maximum number of results to return (default: 200)
+
+    Returns:
+        List of pages with slug, title, and URL
+    """
+    limit = max(1, min(limit, _MAX_PAGES_RESULTS))
+    logger.info(f"Listing pages (prefix: {prefix}, limit={limit})")
+
+    try:
+        pages = database.list_pages(prefix=prefix, limit=limit)
+        return [page.model_dump() for page in pages]
+    except Exception as e:
+        logger.error(f"List pages error: {e}")
+        return []
 
 
 @mcp.tool
