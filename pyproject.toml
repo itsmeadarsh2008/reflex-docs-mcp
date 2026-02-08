@@ -1,6 +1,6 @@
 [project]
 name = "reflex-docs-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "MCP server providing structured access to Reflex documentation"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -16,11 +16,7 @@ classifiers = [
     "Topic :: Software Development :: Documentation",
     "Topic :: Software Development :: Libraries",
 ]
-urls = {
-    "Homepage" = "https://github.com/itsmeadarsh2008/reflex-docs-mcp",
-    "Repository" = "https://github.com/itsmeadarsh2008/reflex-docs-mcp",
-    "Issues" = "https://github.com/itsmeadarsh2008/reflex-docs-mcp/issues",
-}
+urls = { Homepage = "https://github.com/itsmeadarsh2008/reflex-docs-mcp", Repository = "https://github.com/itsmeadarsh2008/reflex-docs-mcp", Issues = "https://github.com/itsmeadarsh2008/reflex-docs-mcp/issues" }
 dependencies = [
     "fastmcp>=2.14.1",
     "pyyaml>=6.0",
