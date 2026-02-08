@@ -427,6 +427,18 @@ def get_stats() -> dict:
         }
 
 
+def is_index_ready() -> bool:
+    """Return True if the database exists and has indexed content."""
+    db_path = get_db_path()
+    if not db_path.exists():
+        return False
+    try:
+        stats = get_stats()
+        return stats.get("sections", 0) > 0
+    except Exception:
+        return False
+
+
 def list_pages(prefix: str | None = None, limit: int = 200) -> list[DocPageInfo]:
     """List available documentation pages, optionally filtered by slug prefix."""
     with get_connection() as conn:

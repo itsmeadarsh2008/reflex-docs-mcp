@@ -1,10 +1,13 @@
 """FastMCP server exposing Reflex documentation tools."""
 
 import logging
+from contextlib import asynccontextmanager
 
+import anyio
 from fastmcp import FastMCP
 
 from . import database
+from .bootstrap import ensure_index, env_flag
 
 # Configure logging
 logging.basicConfig(
@@ -16,6 +19,13 @@ logger = logging.getLogger(__name__)
 # Reasonable hard limits to protect the server from huge responses.
 _MAX_SEARCH_RESULTS = 50
 _MAX_PAGES_RESULTS = 500
+
+@asynccontextmanager
+async def lifespan(_server: FastMCP):
+    if env_flag("REFLEX_DOCS_AUTO_INDEX", True):
+        await anyio.to_thread.run_sync(ensure_index)
+    yield {}
+
 
 # Create the MCP server
 mcp = FastMCP(
@@ -33,7 +43,8 @@ mcp = FastMCP(
     - search_components: Search components by name or description
     - get_component: Get details about a specific component
     - get_stats: Get database statistics
-    """
+    """,
+    lifespan=lifespan
 )
 
 
@@ -199,19 +210,6 @@ def get_stats() -> dict:
         return {"error": str(e)}
 
 
-def check_database() -> bool:
-    """Check if the database exists and has data."""
-    db_path = database.get_db_path()
-    if not db_path.exists():
-        return False
-    
-    try:
-        stats = database.get_stats()
-        return stats.get("sections", 0) > 0
-    except Exception:
-        return False
-
-
 def main():
     """Main entry point for the MCP server."""
     import argparse
@@ -239,11 +237,11 @@ def main():
     
     args = parser.parse_args()
     
-    # Check if database is ready
-    if not check_database():
+    auto_index = env_flag("REFLEX_DOCS_AUTO_INDEX", True)
+    if not auto_index and not database.is_index_ready():
         print("=" * 60)
         print("WARNING: Documentation index not found or empty!")
-        print("Run the indexer first:")
+        print("Auto-indexing is disabled. Run the indexer:")
         print("  python -m reflex_docs_mcp.indexer")
         print("=" * 60)
         print()
