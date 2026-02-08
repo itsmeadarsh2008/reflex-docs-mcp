@@ -16,7 +16,6 @@ classifiers = [
     "Topic :: Software Development :: Documentation",
     "Topic :: Software Development :: Libraries",
 ]
-urls = { Homepage = "https://github.com/itsmeadarsh2008/reflex-docs-mcp", Repository = "https://github.com/itsmeadarsh2008/reflex-docs-mcp", Issues = "https://github.com/itsmeadarsh2008/reflex-docs-mcp/issues" }
 dependencies = [
     "fastmcp>=2.14.1",
     "pyyaml>=6.0",
@@ -33,6 +32,11 @@ demo = [
 [project.scripts]
 reflex-docs-mcp = "reflex_docs_mcp.server:main"
 index-docs = "reflex_docs_mcp.indexer:main"
+
+[project.urls]
+Homepage = "https://github.com/itsmeadarsh2008/reflex-docs-mcp"
+Repository = "https://github.com/itsmeadarsh2008/reflex-docs-mcp"
+Issues = "https://github.com/itsmeadarsh2008/reflex-docs-mcp/issues"
 
 [build-system]
 requires = ["hatchling"]
