@@ -11,14 +11,14 @@ from .bootstrap import ensure_index, env_flag
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 # Reasonable hard limits to protect the server from huge responses.
 _MAX_SEARCH_RESULTS = 50
 _MAX_PAGES_RESULTS = 500
+
 
 @asynccontextmanager
 async def lifespan(_server: FastMCP):
@@ -44,28 +44,28 @@ mcp = FastMCP(
     - get_component: Get details about a specific component
     - get_stats: Get database statistics
     """,
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 
 @mcp.tool
 def search_docs(query: str, limit: int = 10) -> list[dict]:
     """Search Reflex documentation by keyword or natural language query.
-    
+
     Args:
         query: Search query (e.g., "rx.foreach", "state management", "styling")
         limit: Maximum number of results to return (default: 10)
-    
+
     Returns:
         List of matching documentation sections with slug, title, score, snippet, and URL
-    
+
     Example:
         search_docs("rx.foreach")
         search_docs("how to style components")
     """
     limit = max(1, min(limit, _MAX_SEARCH_RESULTS))
     logger.info(f"Searching docs: {query} (limit={limit})")
-    
+
     try:
         results = database.search_sections(query, limit=limit)
         return [result.model_dump() for result in results]
@@ -77,19 +77,19 @@ def search_docs(query: str, limit: int = 10) -> list[dict]:
 @mcp.tool
 def get_doc(slug: str) -> dict | None:
     """Retrieve a full documentation page by its slug.
-    
+
     Args:
         slug: Document slug (e.g., "library/layout/box", "components/rendering_iterables")
-    
+
     Returns:
         Full document with title, URL, and all sections with markdown content
-    
+
     Example:
         get_doc("library/layout/box")
         get_doc("state/overview")
     """
     logger.info(f"Getting doc: {slug}")
-    
+
     try:
         page = database.get_page_sections(slug)
         if page:
@@ -103,20 +103,20 @@ def get_doc(slug: str) -> dict | None:
 @mcp.tool
 def list_components(category: str | None = None) -> list[dict]:
     """List all documented Reflex components.
-    
+
     Args:
         category: Optional category filter (e.g., "layout", "forms", "data-display")
-    
+
     Returns:
         List of components with name, category, description, and documentation URL
-    
+
     Example:
         list_components()
         list_components("layout")
         list_components("forms")
     """
     logger.info(f"Listing components (category: {category})")
-    
+
     try:
         components = database.list_all_components(category=category)
         return [comp.model_dump() for comp in components]
@@ -150,20 +150,20 @@ def search_components(query: str, limit: int = 20) -> list[dict]:
 @mcp.tool
 def get_component(name: str) -> dict | None:
     """Get detailed information about a specific Reflex component.
-    
+
     Args:
         name: Component name (e.g., "rx.box", "rx.button", "box", "button")
               The "rx." prefix is optional.
-    
+
     Returns:
         Component info with name, category, description, and documentation URL
-    
+
     Example:
         get_component("rx.box")
         get_component("button")
     """
     logger.info(f"Getting component: {name}")
-    
+
     try:
         component = database.get_component_by_name(name)
         if component:
@@ -199,7 +199,7 @@ def list_pages(prefix: str | None = None, limit: int = 200) -> list[dict]:
 @mcp.tool
 def get_stats() -> dict:
     """Get statistics about the indexed documentation.
-    
+
     Returns:
         Dictionary with counts of pages, sections, and components
     """
@@ -213,30 +213,25 @@ def get_stats() -> dict:
 def main():
     """Main entry point for the MCP server."""
     import argparse
-    
-    parser = argparse.ArgumentParser(
-        description="Run the Reflex Docs MCP Server"
-    )
+
+    parser = argparse.ArgumentParser(description="Run the Reflex Docs MCP Server")
     parser.add_argument(
         "--transport",
         choices=["stdio", "sse"],
         default="stdio",
-        help="Transport protocol (default: stdio)"
+        help="Transport protocol (default: stdio)",
     )
     parser.add_argument(
         "--host",
         default="127.0.0.1",
-        help="Host for SSE transport (default: 127.0.0.1)"
+        help="Host for SSE transport (default: 127.0.0.1)",
     )
     parser.add_argument(
-        "--port",
-        type=int,
-        default=8000,
-        help="Port for SSE transport (default: 8000)"
+        "--port", type=int, default=8000, help="Port for SSE transport (default: 8000)"
     )
-    
+
     args = parser.parse_args()
-    
+
     auto_index = env_flag("REFLEX_DOCS_AUTO_INDEX", True)
     if not auto_index and not database.is_index_ready():
         print("=" * 60)
@@ -245,13 +240,13 @@ def main():
         print("  python -m reflex_docs_mcp.indexer")
         print("=" * 60)
         print()
-    
+
     # Initialize database (creates tables if needed)
     database.init_db()
-    
+
     # Run the server
     logger.info(f"Starting Reflex Docs MCP Server ({args.transport})")
-    
+
     if args.transport == "stdio":
         mcp.run()
     else:

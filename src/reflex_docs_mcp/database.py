@@ -82,7 +82,7 @@ def init_db() -> None:
     """Initialize the database with required tables."""
     with get_connection() as conn:
         cursor = conn.cursor()
-        
+
         # Main sections table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS docs_sections (
@@ -96,7 +96,7 @@ def init_db() -> None:
                 url TEXT NOT NULL
             )
         """)
-        
+
         # FTS5 virtual table for full-text search
         cursor.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS docs_sections_fts USING fts5(
@@ -108,7 +108,7 @@ def init_db() -> None:
                 content_rowid='id'
             )
         """)
-        
+
         # Triggers to keep FTS in sync
         cursor.execute("""
             CREATE TRIGGER IF NOT EXISTS docs_sections_ai AFTER INSERT ON docs_sections BEGIN
@@ -116,14 +116,14 @@ def init_db() -> None:
                 VALUES (new.id, new.slug, new.title, new.heading, new.content);
             END
         """)
-        
+
         cursor.execute("""
             CREATE TRIGGER IF NOT EXISTS docs_sections_ad AFTER DELETE ON docs_sections BEGIN
                 INSERT INTO docs_sections_fts(docs_sections_fts, rowid, slug, title, heading, content)
                 VALUES ('delete', old.id, old.slug, old.title, old.heading, old.content);
             END
         """)
-        
+
         cursor.execute("""
             CREATE TRIGGER IF NOT EXISTS docs_sections_au AFTER UPDATE ON docs_sections BEGIN
                 INSERT INTO docs_sections_fts(docs_sections_fts, rowid, slug, title, heading, content)
@@ -132,7 +132,7 @@ def init_db() -> None:
                 VALUES (new.id, new.slug, new.title, new.heading, new.content);
             END
         """)
-        
+
         # Components table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS components (
@@ -144,11 +144,15 @@ def init_db() -> None:
                 url TEXT
             )
         """)
-        
+
         # Indexes for faster queries
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sections_slug ON docs_sections(slug)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_components_category ON components(category)")
-        
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sections_slug ON docs_sections(slug)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_components_category ON components(category)"
+        )
+
         conn.commit()
 
 
@@ -168,7 +172,7 @@ def insert_section(
     level: int,
     content: str,
     position: int,
-    url: str
+    url: str,
 ) -> None:
     """Insert a documentation section."""
     insert_sections_many([(slug, title, heading, level, content, position, url)])
@@ -179,7 +183,7 @@ def insert_component(
     category: str | None,
     description: str,
     doc_slug: str | None,
-    url: str | None
+    url: str | None,
 ) -> None:
     """Insert a component, updating if it already exists."""
     insert_components_many([(name, category, description, doc_slug, url)])
@@ -187,7 +191,7 @@ def insert_component(
 
 def insert_sections_many(
     rows: Iterable[tuple[str, str, str, int, str, int, str]],
-    conn: sqlite3.Connection | None = None
+    conn: sqlite3.Connection | None = None,
 ) -> int:
     """Bulk insert documentation sections."""
     rows = list(rows)
@@ -202,7 +206,7 @@ def insert_sections_many(
             INSERT INTO docs_sections (slug, title, heading, level, content, position, url)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            rows
+            rows,
         )
         if owns_connection:
             conn.commit()
@@ -211,7 +215,7 @@ def insert_sections_many(
 
 def insert_components_many(
     rows: Iterable[tuple[str, str | None, str, str | None, str | None]],
-    conn: sqlite3.Connection | None = None
+    conn: sqlite3.Connection | None = None,
 ) -> int:
     """Bulk insert components."""
     rows = list(rows)
@@ -226,7 +230,7 @@ def insert_components_many(
             INSERT OR REPLACE INTO components (name, category, description, doc_slug, url)
             VALUES (?, ?, ?, ?, ?)
             """,
-            rows
+            rows,
         )
         if owns_connection:
             conn.commit()
@@ -237,17 +241,17 @@ def search_sections(query: str, limit: int = 10) -> list[DocResult]:
     """Search docs sections using FTS5."""
     with get_connection() as conn:
         cursor = conn.cursor()
-        
+
         # Escape special FTS5 characters by wrapping terms in quotes
         # FTS5 treats . : - and other chars as syntax
         # We split on whitespace and quote each term
         terms = query.strip().split()
         if not terms:
             return []
-        
+
         # Quote each term to escape special characters
         escaped_query = " ".join(f'"{term}"' for term in terms)
-        
+
         # Use BM25 for ranking
         cursor.execute(
             """
@@ -264,23 +268,25 @@ def search_sections(query: str, limit: int = 10) -> list[DocResult]:
             ORDER BY score
             LIMIT ?
             """,
-            (escaped_query, limit)
+            (escaped_query, limit),
         )
-        
+
         results = []
         for row in cursor.fetchall():
             # Create a snippet from content (first 200 chars)
             content = row["content"]
             snippet = content[:200] + "..." if len(content) > 200 else content
-            
-            results.append(DocResult(
-                slug=row["slug"],
-                title=row["title"],
-                score=abs(row["score"]),  # BM25 returns negative scores
-                snippet=snippet,
-                url=row["url"]
-            ))
-        
+
+            results.append(
+                DocResult(
+                    slug=row["slug"],
+                    title=row["title"],
+                    score=abs(row["score"]),  # BM25 returns negative scores
+                    snippet=snippet,
+                    url=row["url"],
+                )
+            )
+
         return results
 
 
@@ -295,27 +301,25 @@ def get_page_sections(slug: str) -> DocPage | None:
             WHERE slug = ?
             ORDER BY position
             """,
-            (slug,)
+            (slug,),
         )
-        
+
         rows = cursor.fetchall()
         if not rows:
             return None
-        
+
         sections = [
             DocSection(
-                heading=row["heading"],
-                level=row["level"],
-                content=row["content"]
+                heading=row["heading"], level=row["level"], content=row["content"]
             )
             for row in rows
         ]
-        
+
         return DocPage(
             slug=rows[0]["slug"],
             title=rows[0]["title"],
             url=rows[0]["url"],
-            sections=sections
+            sections=sections,
         )
 
 
@@ -323,22 +327,21 @@ def list_all_components(category: str | None = None) -> list[ComponentInfo]:
     """List all components, optionally filtered by category."""
     with get_connection() as conn:
         cursor = conn.cursor()
-        
+
         if category:
             cursor.execute(
-                "SELECT * FROM components WHERE category = ? ORDER BY name",
-                (category,)
+                "SELECT * FROM components WHERE category = ? ORDER BY name", (category,)
             )
         else:
             cursor.execute("SELECT * FROM components ORDER BY name")
-        
+
         return [
             ComponentInfo(
                 name=row["name"],
                 category=row["category"],
                 description=row["description"],
                 doc_slug=row["doc_slug"],
-                url=row["url"]
+                url=row["url"],
             )
             for row in cursor.fetchall()
         ]
@@ -359,7 +362,7 @@ def search_components(query: str, limit: int = 20) -> list[ComponentInfo]:
             ORDER BY name
             LIMIT ?
             """,
-            (like_query, like_query, limit)
+            (like_query, like_query, limit),
         )
         return [
             ComponentInfo(
@@ -367,7 +370,7 @@ def search_components(query: str, limit: int = 20) -> list[ComponentInfo]:
                 category=row["category"],
                 description=row["description"],
                 doc_slug=row["doc_slug"],
-                url=row["url"]
+                url=row["url"],
             )
             for row in cursor.fetchall()
         ]
@@ -377,32 +380,28 @@ def get_component_by_name(name: str) -> ComponentInfo | None:
     """Get a component by its name."""
     # Normalize name - accept with or without rx. prefix
     search_name = name if name.startswith("rx.") else f"rx.{name}"
-    
+
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM components WHERE name = ?",
-            (search_name,)
-        )
-        
+        cursor.execute("SELECT * FROM components WHERE name = ?", (search_name,))
+
         row = cursor.fetchone()
         if not row:
             # Try without prefix
             cursor.execute(
-                "SELECT * FROM components WHERE name = ?",
-                (name.replace("rx.", ""),)
+                "SELECT * FROM components WHERE name = ?", (name.replace("rx.", ""),)
             )
             row = cursor.fetchone()
-        
+
         if not row:
             return None
-        
+
         return ComponentInfo(
             name=row["name"],
             category=row["category"],
             description=row["description"],
             doc_slug=row["doc_slug"],
-            url=row["url"]
+            url=row["url"],
         )
 
 
@@ -410,20 +409,20 @@ def get_stats() -> dict:
     """Get database statistics."""
     with get_connection() as conn:
         cursor = conn.cursor()
-        
+
         cursor.execute("SELECT COUNT(*) as count FROM docs_sections")
         sections_count = cursor.fetchone()["count"]
-        
+
         cursor.execute("SELECT COUNT(DISTINCT slug) as count FROM docs_sections")
         pages_count = cursor.fetchone()["count"]
-        
+
         cursor.execute("SELECT COUNT(*) as count FROM components")
         components_count = cursor.fetchone()["count"]
-        
+
         return {
             "sections": sections_count,
             "pages": pages_count,
-            "components": components_count
+            "components": components_count,
         }
 
 
@@ -454,7 +453,7 @@ def list_pages(prefix: str | None = None, limit: int = 200) -> list[DocPageInfo]
                 ORDER BY slug
                 LIMIT ?
                 """,
-                (like_prefix, limit)
+                (like_prefix, limit),
             )
         else:
             cursor.execute(
@@ -465,13 +464,9 @@ def list_pages(prefix: str | None = None, limit: int = 200) -> list[DocPageInfo]
                 ORDER BY slug
                 LIMIT ?
                 """,
-                (limit,)
+                (limit,),
             )
         return [
-            DocPageInfo(
-                slug=row["slug"],
-                title=row["title"],
-                url=row["url"]
-            )
+            DocPageInfo(slug=row["slug"], title=row["title"], url=row["url"])
             for row in cursor.fetchall()
         ]
