@@ -69,3 +69,8 @@ python test.py
 ## Notes
 - `env.example` contains Groq settings.
 - The indexer writes to `data/reflex_docs.db` by default.
+- On startup, the server auto-builds the index if missing. Controls:
+- `REFLEX_DOCS_AUTO_INDEX` (default: true)
+- `REFLEX_DOCS_DOCS_SRC` (path to clone docs into, default: `docs_src`)
+- `REFLEX_DOCS_SKIP_CLONE` / `REFLEX_DOCS_FORCE_CLONE`
+- `REFLEX_DOCS_KEEP_EXISTING`
