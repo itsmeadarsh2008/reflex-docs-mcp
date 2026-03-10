@@ -1,8 +1,12 @@
 """SQLite database operations with FTS5 for full-text search."""
 
 import atexit
+import functools
+import os
+import re
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from contextlib import contextmanager, nullcontext
 from typing import Generator, Iterable
@@ -34,6 +38,7 @@ def _apply_pragmas(conn: sqlite3.Connection) -> None:
     # Negative cache_size means KB. -64000 ~= 64MB page cache.
     conn.execute("PRAGMA cache_size=-64000")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA mmap_size=268435456")
 
 
 def _get_thread_connection() -> sqlite3.Connection:
@@ -145,6 +150,13 @@ def init_db() -> None:
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS _meta (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+
         # Indexes for faster queries
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_sections_slug ON docs_sections(slug)"
@@ -162,6 +174,26 @@ def clear_db() -> None:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM docs_sections")
         cursor.execute("DELETE FROM components")
+        conn.commit()
+
+
+def get_meta(key: str) -> str | None:
+    """Get a value from the _meta table."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM _meta WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        return row["value"] if row else None
+
+
+def set_meta(key: str, value: str) -> None:
+    """Set a value in the _meta table."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO _meta (key, value) VALUES (?, ?)",
+            (key, value),
+        )
         conn.commit()
 
 
@@ -237,30 +269,39 @@ def insert_components_many(
     return len(rows)
 
 
-def search_sections(query: str, limit: int = 10) -> list[DocResult]:
-    """Search docs sections using FTS5."""
+def search_sections(query: str, limit: int = 10, fuzzy: bool = True) -> list[DocResult]:
+    """Search docs sections using FTS5.
+
+    Args:
+        query: Search query string.
+        limit: Maximum results to return.
+        fuzzy: If True, use phrase match + prefix expansion. If False, use exact quoting.
+    """
+    cache_key = f"{query}:{limit}:{fuzzy}"
+    cached = _search_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     with get_connection() as conn:
         cursor = conn.cursor()
 
-        # Escape special FTS5 characters by wrapping terms in quotes
-        # FTS5 treats . : - and other chars as syntax
-        # We split on whitespace and quote each term
-        terms = query.strip().split()
-        if not terms:
-            return []
+        if fuzzy:
+            fts_query = build_fts_query(query)
+        else:
+            terms = query.strip().split()
+            if not terms:
+                return []
+            fts_query = " ".join(f'"{term}"' for term in terms)
 
-        # Quote each term to escape special characters
-        escaped_query = " ".join(f'"{term}"' for term in terms)
-
-        # Use BM25 for ranking
         cursor.execute(
             """
-            SELECT 
+            SELECT
                 s.slug,
                 s.title,
                 s.heading,
                 s.content,
                 s.url,
+                highlight(docs_sections_fts, 3, '<b>', '</b>') as snippet,
                 bm25(docs_sections_fts) as score
             FROM docs_sections_fts fts
             JOIN docs_sections s ON fts.rowid = s.id
@@ -268,25 +309,34 @@ def search_sections(query: str, limit: int = 10) -> list[DocResult]:
             ORDER BY score
             LIMIT ?
             """,
-            (escaped_query, limit),
+            (fts_query, limit),
         )
 
+        query_tokens = re.sub(r'[^\w\s]', '', query.lower()).split()
         results = []
         for row in cursor.fetchall():
-            # Create a snippet from content (first 200 chars)
-            content = row["content"]
-            snippet = content[:200] + "..." if len(content) > 200 else content
-
+            score = row["score"]
+            # Boost results whose title contains a query token
+            title_lower = row["title"].lower()
+            if any(t in title_lower for t in query_tokens):
+                score = score * 0.7
+            snippet = row["snippet"]
+            if not snippet or snippet == row["content"]:
+                content = row["content"]
+                snippet = content[:200] + "..." if len(content) > 200 else content
             results.append(
                 DocResult(
                     slug=row["slug"],
                     title=row["title"],
-                    score=abs(row["score"]),  # BM25 returns negative scores
+                    score=abs(score),
                     snippet=snippet,
                     url=row["url"],
                 )
             )
 
+        # Re-sort after title boosting
+        results.sort(key=lambda r: r.score)
+        _search_cache_set(cache_key, results)
         return results
 
 
@@ -321,6 +371,12 @@ def get_page_sections(slug: str) -> DocPage | None:
             url=rows[0]["url"],
             sections=sections,
         )
+
+
+@functools.lru_cache(maxsize=512)
+def get_page_sections_cached(slug: str) -> DocPage | None:
+    """LRU-cached version of get_page_sections."""
+    return get_page_sections(slug)
 
 
 def list_all_components(category: str | None = None) -> list[ComponentInfo]:
@@ -436,6 +492,40 @@ def is_index_ready() -> bool:
         return stats.get("sections", 0) > 0
     except Exception:
         return False
+
+
+def build_fts_query(raw: str) -> str:
+    """Build an FTS5 query with phrase match and prefix expansion."""
+    tokens = re.sub(r'[^\w\s]', '', raw.lower()).split()
+    if not tokens:
+        return '""'
+    phrase = " ".join(tokens)
+    prefix_terms = " ".join(f'"{t}"*' for t in tokens if len(t) > 2)
+    return f'"{phrase}" OR {prefix_terms}' if prefix_terms else f'"{phrase}"'
+
+
+_search_cache: dict[str, tuple[float, list]] = {}
+_SEARCH_CACHE_TTL = int(os.getenv("REFLEX_DOCS_CACHE_TTL", "300"))
+
+
+def _search_cache_get(key: str) -> list | None:
+    """Get a value from the search cache if it exists and is not expired."""
+    if key in _search_cache:
+        ts, value = _search_cache[key]
+        if time.time() - ts < _SEARCH_CACHE_TTL:
+            return value
+        del _search_cache[key]
+    return None
+
+
+def _search_cache_set(key: str, value: list) -> None:
+    """Set a value in the search cache."""
+    _search_cache[key] = (time.time(), value)
+
+
+def clear_search_cache() -> None:
+    """Clear the entire search cache."""
+    _search_cache.clear()
 
 
 def list_pages(prefix: str | None = None, limit: int = 200) -> list[DocPageInfo]:

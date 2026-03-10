@@ -9,7 +9,7 @@ __pycache__/
 # Virtual environments
 .venv/
 venv/
-
+docs_src
 # Packaging
 build/
 dist/

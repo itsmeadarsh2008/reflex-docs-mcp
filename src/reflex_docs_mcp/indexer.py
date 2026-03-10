@@ -2,6 +2,7 @@
 
 import logging
 import shutil
+import subprocess
 from pathlib import Path
 
 try:
@@ -82,6 +83,31 @@ def index_docs(docs_dir: Path, clear_existing: bool = True) -> dict:
         Statistics about the indexing operation
     """
     logger.info(f"Indexing docs from {docs_dir}")
+
+    # Incremental indexing: skip if the git commit hasn't changed
+    import os
+    force_reindex = os.getenv("REFLEX_DOCS_FORCE_CLONE", "").lower() in ("true", "1", "yes")
+    if not force_reindex:
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(docs_dir.parent), "rev-parse", "HEAD"],
+                capture_output=True, text=True
+            )
+            current_commit = result.stdout.strip()
+            if current_commit:
+                database.init_db()
+                stored_commit = database.get_meta("last_commit")
+                if stored_commit == current_commit:
+                    logger.info(f"Index is up to date (commit {current_commit})")
+                    return {
+                        "files_processed": 0,
+                        "sections_indexed": 0,
+                        "components_indexed": 0,
+                        "errors": 0,
+                        "skipped": True,
+                    }
+        except Exception as e:
+            logger.debug(f"Could not check git commit: {e}")
 
     # Initialize and optionally clear database
     database.init_db()
@@ -174,6 +200,23 @@ def index_docs(docs_dir: Path, clear_existing: bool = True) -> dict:
                 components_batch, conn=conn
             )
             components_batch.clear()
+
+    # Store the current git commit for incremental indexing
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(docs_dir.parent), "rev-parse", "HEAD"],
+            capture_output=True, text=True
+        )
+        current_commit = result.stdout.strip()
+        if current_commit:
+            database.set_meta("last_commit", current_commit)
+    except Exception:
+        pass
+
+    # Clear caches after re-indexing
+    if hasattr(database, 'get_page_sections_cached'):
+        database.get_page_sections_cached.cache_clear()
+    database.clear_search_cache()
 
     logger.info(f"Indexing complete: {stats}")
     return stats
